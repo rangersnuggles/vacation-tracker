@@ -276,7 +276,7 @@ function AuthScreen({ onAuth }) {
     <div style={{ ...sCont, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div style={{ maxWidth: 400, width: "100%", padding: "40px 24px" }}>
         <div style={{ textAlign: "center", marginBottom: 36 }}>
-          <div style={{ fontSize: 40, marginBottom: 8 }}>🌴</div>
+          <img src="/logo.png" alt="Mess" style={{ height: 32, marginBottom: 16 }} />
           <h1 style={{ fontFamily: "var(--serif)", fontSize: 28, fontWeight: 800, margin: 0, letterSpacing: -0.5 }}>Time Off Tracker</h1>
           <p style={{ color: "#888", fontSize: 13, marginTop: 6, fontFamily: "var(--mono)" }}>
             {mode === "login" ? "Sign in to continue" : "Create your account"}
@@ -320,7 +320,7 @@ function App() {
   const [calMonth, setCalMonth] = useState(new Date().getMonth());
   const [selectedDates, setSelectedDates] = useState([]);
   const [requestNote, setRequestNote] = useState("");
-  const [adminTab, setAdminTab] = useState("employees");
+  const [adminTab, setAdminTab] = useState("mytimeoff");
   const [editingEmp, setEditingEmp] = useState(null);
 
   const log = useCallback((msg) => {
@@ -491,13 +491,16 @@ function App() {
 
           {/* HEADER */}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
-            <div>
-              <h1 style={{ fontFamily: "var(--serif)", fontSize: 20, fontWeight: 800, margin: 0 }}>{profile?.name || "Loading..."}</h1>
-              {profile && (
-                <span style={{ fontSize: 11, fontFamily: "var(--mono)", color: isAdmin ? "#2d6a4f" : "#888", background: isAdmin ? "#E8F5E9" : "#f0f0f0", padding: "2px 8px", borderRadius: 10 }}>
-                  {profile.role}
-                </span>
-              )}
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <img src="/logo.png" alt="Mess" style={{ height: 20 }} />
+              <div>
+                <h1 style={{ fontFamily: "var(--serif)", fontSize: 20, fontWeight: 800, margin: 0 }}>{profile?.name || "Loading..."}</h1>
+                {profile && (
+                  <span style={{ fontSize: 11, fontFamily: "var(--mono)", color: isAdmin ? "#2d6a4f" : "#888", background: isAdmin ? "#E8F5E9" : "#f0f0f0", padding: "2px 8px", borderRadius: 10 }}>
+                    {profile.role}
+                  </span>
+                )}
+              </div>
             </div>
             <div style={{ display: "flex", gap: 8 }}>
               <button onClick={loadData} style={{ ...sNavBtn, fontSize: 13, padding: "5px 10px" }} title="Refresh">↻</button>
@@ -615,20 +618,93 @@ function App() {
           {/* ═══ ADMIN VIEW ═══ */}
           {profile && isAdmin && (
             <>
-              <div style={{ display: "flex", gap: 0, marginBottom: 20, borderBottom: "2px solid #eee" }}>
+              <div style={{ display: "flex", gap: 0, marginBottom: 20, borderBottom: "2px solid #eee", flexWrap: "wrap" }}>
                 {[
+                  { key: "mytimeoff", label: "My Time Off" },
                   { key: "employees", label: "Team" },
                   { key: "requests", label: `Requests${allPending.length ? ` (${allPending.length})` : ""}` },
                   { key: "calendar", label: "Calendar" },
                 ].map(t => (
                   <button key={t.key} onClick={() => setAdminTab(t.key)} style={{
-                    background: "none", border: "none", padding: "10px 18px", cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: "var(--mono)",
+                    background: "none", border: "none", padding: "10px 14px", cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: "var(--mono)",
                     color: adminTab === t.key ? "#2d6a4f" : "#999", borderBottom: adminTab === t.key ? "2px solid #2d6a4f" : "2px solid transparent", marginBottom: -2, transition: "all 0.15s",
                   }}>{t.label}</button>
                 ))}
                 <div style={{ flex: 1 }} />
                 <button onClick={exportICS} style={{ ...sNavBtn, fontSize: 11, padding: "4px 10px", color: "#2d6a4f", borderColor: "#2d6a4f", alignSelf: "center" }}>📅 .ics</button>
               </div>
+
+              {/* MY TIME OFF TAB */}
+              {adminTab === "mytimeoff" && (
+                <>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 24 }}>
+                    {[
+                      { val: remaining, label: "Available", color: "#2d6a4f" },
+                      { val: usedDays, label: "Used", color: "#E07A5F" },
+                      { val: pendDays, label: "Pending", color: "#F2CC8F" },
+                    ].map(s => (
+                      <div key={s.label} style={sStatCard}>
+                        <div style={{ fontSize: 28, fontWeight: 800, fontFamily: "var(--serif)", color: s.color }}>{s.val}</div>
+                        <div style={sStatLabel}>{s.label}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div style={sCard}>
+                    <CalNav year={calYear} month={calMonth} onPrev={prevMonth} onNext={nextMonth} />
+                    <MiniCalendar year={calYear} month={calMonth}
+                      selectedDates={selectedDates} approvedDates={myApproved} pendingDates={myPendingDates}
+                      onToggleDate={(dk) => { if (!myApproved.includes(dk) && !myPendingDates.includes(dk)) toggleDate(dk); }}
+                    />
+                    <div style={{ marginTop: 12, display: "flex", gap: 16, flexWrap: "wrap" }}>
+                      <Legend color="#2d6a4f" label="Selected" />
+                      <Legend color="#d4edda" label="Approved" border="#155724" />
+                      <Legend color="#fff3cd" label="Pending" border="#856404" />
+                    </div>
+                  </div>
+
+                  {selectedDates.length > 0 && (
+                    <div style={{ ...sCard, marginTop: 16, background: "#f0f7f2" }}>
+                      <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8, fontFamily: "var(--serif)" }}>
+                        Request {businessDays(selectedDates)} day{businessDays(selectedDates) !== 1 ? "s" : ""} off
+                      </div>
+                      <div style={{ fontSize: 12, color: "#666", marginBottom: 12, fontFamily: "var(--mono)" }}>
+                        {selectedDates.map(formatDate).join(", ")}
+                      </div>
+                      <input placeholder="Add a note (optional)" value={requestNote} onChange={e => setRequestNote(e.target.value)} style={{ ...sInput, marginBottom: 10, fontSize: 13 }} />
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <button onClick={submitReq} style={sPrimBtn}>Submit Request</button>
+                        <button onClick={() => setSelectedDates([])} style={{ ...sNavBtn, fontSize: 13, padding: "8px 16px" }}>Clear</button>
+                      </div>
+                    </div>
+                  )}
+
+                  {myPendingReqs.length > 0 && (
+                    <div style={{ ...sCard, marginTop: 16 }}>
+                      <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12, fontFamily: "var(--serif)" }}>Pending Requests</div>
+                      {myPendingReqs.map(req => (
+                        <div key={req.id} style={{ padding: "10px 0", borderBottom: "1px solid #eee" }}>
+                          <div style={{ fontSize: 13, fontWeight: 600 }}>{businessDays(req.dates)} day{businessDays(req.dates)!==1?"s":""}</div>
+                          <div style={{ fontSize: 11, color: "#888", fontFamily: "var(--mono)", marginTop: 2 }}>
+                            {(req.dates||[]).slice(0,3).map(formatDate).join(", ")}{(req.dates||[]).length > 3 ? ` +${req.dates.length-3} more` : ""}
+                          </div>
+                          {req.note && <div style={{ fontSize: 12, color: "#666", marginTop: 4, fontStyle: "italic" }}>"{req.note}"</div>}
+                          <span style={{ display: "inline-block", padding: "3px 10px", borderRadius: 20, fontSize: 11, fontWeight: 600, fontFamily: "var(--mono)", background: "#FFF3CD", color: "#856404", marginTop: 6 }}>⏳ Awaiting approval</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {myApproved.length > 0 && (
+                    <div style={{ ...sCard, marginTop: 16 }}>
+                      <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8, fontFamily: "var(--serif)" }}>Approved Time Off</div>
+                      <div style={{ fontSize: 12, color: "#666", fontFamily: "var(--mono)", lineHeight: 1.8 }}>
+                        {[...myApproved].sort().map(formatDate).join(" · ")}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
 
               {adminTab === "employees" && (profiles || []).map((emp, idx) => {
                 const empApp = (requests || []).filter(r => r.employee_id === emp.id && r.status === "approved").flatMap(r => r.dates || []);
