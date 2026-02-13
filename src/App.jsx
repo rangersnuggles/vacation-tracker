@@ -160,7 +160,7 @@ function UpcomingSidebar({ profiles, requests, holidays, isAdmin }) {
 
   // Sort by date
   items.sort((a, b) => a.date.localeCompare(b.date));
-  const upcoming = items.slice(0, 15);
+  const upcoming = items.slice(0, 6);
 
   if (!upcoming.length) {
     return (
@@ -258,13 +258,13 @@ function MiniCalendar({ year, month, selectedDates = [], approvedDates = [], pen
             });
           }
 
-          const clickable = !weekend && !isPast && !isHoliday && onToggleDate;
+          const clickable = !weekend && !isHoliday && onToggleDate;
 
           return (
             <div key={dk}
               onClick={() => clickable && onToggleDate(dk)}
               title={isHoliday ? holidayNames[dk] : undefined}
-              style={{ position: "relative", textAlign: "center", padding: "6px 2px", fontSize: 13, fontFamily: "var(--mono)", borderRadius: 6, border: bdr, cursor: clickable ? "pointer" : "default", background: bg, color: clr, fontWeight: isToday || isHoliday ? 700 : 400, opacity: isPast && !isApp && !isPend && !isHoliday ? 0.5 : 1, transition: "all 0.15s" }}>
+              style={{ position: "relative", textAlign: "center", padding: "6px 2px", fontSize: 13, fontFamily: "var(--mono)", borderRadius: 6, border: bdr, cursor: clickable ? "pointer" : "default", background: bg, color: clr, fontWeight: isToday || isHoliday ? 700 : 400, opacity: isPast && !isSel && !isApp && !isPend && !isHoliday ? 0.65 : 1, transition: "all 0.15s" }}>
               {d}
               {isHoliday && !isAdmin && <div style={{ fontSize: 7, lineHeight: 1, marginTop: 1 }}>★</div>}
               {dots.length > 0 && (
