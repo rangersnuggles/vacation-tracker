@@ -276,7 +276,7 @@ function AuthScreen({ onAuth }) {
     <div style={{ ...sCont, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div style={{ maxWidth: 400, width: "100%", padding: "40px 24px" }}>
         <div style={{ textAlign: "center", marginBottom: 36 }}>
-          <img src="/logo.png" alt="Mess" style={{ height: 32, marginBottom: 16 }} />
+          <img src="/logo.svg" alt="Mess" style={{ height: 32, marginBottom: 16 }} />
           <h1 style={{ fontFamily: "var(--serif)", fontSize: 28, fontWeight: 800, margin: 0, letterSpacing: -0.5 }}>Time Off Tracker</h1>
           <p style={{ color: "#888", fontSize: 13, marginTop: 6, fontFamily: "var(--mono)" }}>
             {mode === "login" ? "Sign in to continue" : "Create your account"}
@@ -492,7 +492,7 @@ function App() {
           {/* HEADER */}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <img src="/logo.png" alt="Mess" style={{ height: 20 }} />
+              <img src="/logo.svg" alt="Mess" style={{ height: 20 }} />
               <div>
                 <h1 style={{ fontFamily: "var(--serif)", fontSize: 20, fontWeight: 800, margin: 0 }}>{profile?.name || "Loading..."}</h1>
                 {profile && (
