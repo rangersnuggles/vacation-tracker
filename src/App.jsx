@@ -428,6 +428,29 @@ export default function VacationTracker() {
 
           {loading && !profile && <div style={{ textAlign: "center", padding: 60, color: "#aaa", fontFamily: "var(--serif)", fontSize: 18 }}>Loading...</div>}
 
+          {/* No profile found */}
+          {!loading && !profile && session && (
+            <div style={{ ...sCard, textAlign: "center", padding: 32 }}>
+              <div style={{ fontSize: 32, marginBottom: 12 }}>⚠️</div>
+              <div style={{ fontFamily: "var(--serif)", fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Profile not found</div>
+              <p style={{ color: "#666", fontSize: 13, lineHeight: 1.6, marginBottom: 16 }}>
+                Your login worked but no matching profile was found in the database. This usually means the auto-create trigger didn't fire.
+              </p>
+              <p style={{ color: "#888", fontSize: 12, fontFamily: "var(--mono)", marginBottom: 16 }}>
+                User ID: {session.user.id}<br />
+                Email: {session.user.email}
+              </p>
+              <div style={{ background: "#f4f4f4", borderRadius: 8, padding: 14, fontSize: 12, fontFamily: "var(--mono)", textAlign: "left", lineHeight: 1.8, marginBottom: 16 }}>
+                <div style={{ color: "#888" }}>-- Run this in Supabase SQL Editor:</div>
+                <div>INSERT INTO public.profiles (id, name, email, role)</div>
+                <div>VALUES ('{session.user.id}',</div>
+                <div>  '{session.user.email?.split('@')[0]}',</div>
+                <div>  '{session.user.email}', 'admin');</div>
+              </div>
+              <button onClick={loadData} style={sPrimBtn}>Retry</button>
+            </div>
+          )}
+
           {/* ═══ EMPLOYEE VIEW ═══ */}
           {profile && !isAdmin && (
             <>
