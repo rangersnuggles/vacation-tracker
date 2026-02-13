@@ -22,42 +22,28 @@ export default async function handler(req, res) {
     // Fetch approved requests
     const requestsRes = await fetch(
       `${SUPABASE_URL}/rest/v1/time_off_requests?status=eq.approved&select=id,dates,employee_id`,
-      {
-        headers: {
-          "apikey": apiKey,
-          "Authorization": `Bearer ${apiKey}`,
-        },
-      }
+      { headers: { "apikey": apiKey, "Authorization": `Bearer ${apiKey}` } }
     );
-
-    if (!requestsRes.ok) {
-      const err = await requestsRes.text();
-      console.error("Supabase requests error:", err);
-      return res.status(500).json({ error: "Failed to fetch requests", detail: err });
-    }
-
+    if (!requestsRes.ok) return res.status(500).json({ error: "Failed to fetch requests" });
     const requests = await requestsRes.json();
 
-    // Fetch all profiles for name lookup
+    // Fetch profiles
     const profilesRes = await fetch(
       `${SUPABASE_URL}/rest/v1/profiles?select=id,name`,
-      {
-        headers: {
-          "apikey": apiKey,
-          "Authorization": `Bearer ${apiKey}`,
-        },
-      }
+      { headers: { "apikey": apiKey, "Authorization": `Bearer ${apiKey}` } }
     );
-
-    if (!profilesRes.ok) {
-      const err = await profilesRes.text();
-      console.error("Supabase profiles error:", err);
-      return res.status(500).json({ error: "Failed to fetch profiles", detail: err });
-    }
-
+    if (!profilesRes.ok) return res.status(500).json({ error: "Failed to fetch profiles" });
     const profiles = await profilesRes.json();
     const nameMap = {};
     for (const p of profiles) nameMap[p.id] = p.name;
+
+    // Fetch holidays
+    const holidaysRes = await fetch(
+      `${SUPABASE_URL}/rest/v1/company_holidays?select=id,name,date&order=date`,
+      { headers: { "apikey": apiKey, "Authorization": `Bearer ${apiKey}` } }
+    );
+    if (!holidaysRes.ok) return res.status(500).json({ error: "Failed to fetch holidays" });
+    const companyHolidays = await holidaysRes.json();
 
     // Build ICS
     let ics = [
@@ -68,10 +54,27 @@ export default async function handler(req, res) {
       "METHOD:PUBLISH",
       "X-WR-CALNAME:Team Time Off",
       "X-WR-TIMEZONE:America/Chicago",
-      // Refresh every 12 hours
       "REFRESH-INTERVAL;VALUE=DURATION:PT12H",
       "X-PUBLISHED-TTL:PT12H",
     ];
+
+    // Add company holidays
+    for (const h of companyHolidays) {
+      const endDate = new Date(h.date);
+      endDate.setDate(endDate.getDate() + 1);
+      ics.push(
+        "BEGIN:VEVENT",
+        `DTSTART;VALUE=DATE:${h.date.replace(/-/g, "")}`,
+        `DTEND;VALUE=DATE:${fmtDate(endDate)}`,
+        `SUMMARY:🏢 ${h.name}`,
+        `UID:holiday-${h.id}@vacationtracker`,
+        "STATUS:CONFIRMED",
+        "TRANSP:TRANSPARENT",
+        "END:VEVENT"
+      );
+    }
+
+    // Add time off events
 
     for (const req of requests) {
       const name = nameMap[req.employee_id] || "Unknown";
