@@ -19,9 +19,9 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: "SUPABASE_SERVICE_KEY not configured" });
     }
 
-    // Fetch all approved requests with employee names
+    // Fetch approved requests
     const requestsRes = await fetch(
-      `${SUPABASE_URL}/rest/v1/time_off_requests?status=eq.approved&select=id,dates,employee_id,profiles(name)`,
+      `${SUPABASE_URL}/rest/v1/time_off_requests?status=eq.approved&select=id,dates,employee_id`,
       {
         headers: {
           "apikey": apiKey,
@@ -32,11 +32,32 @@ export default async function handler(req, res) {
 
     if (!requestsRes.ok) {
       const err = await requestsRes.text();
-      console.error("Supabase error:", err);
-      return res.status(500).json({ error: "Failed to fetch data" });
+      console.error("Supabase requests error:", err);
+      return res.status(500).json({ error: "Failed to fetch requests", detail: err });
     }
 
     const requests = await requestsRes.json();
+
+    // Fetch all profiles for name lookup
+    const profilesRes = await fetch(
+      `${SUPABASE_URL}/rest/v1/profiles?select=id,name`,
+      {
+        headers: {
+          "apikey": apiKey,
+          "Authorization": `Bearer ${apiKey}`,
+        },
+      }
+    );
+
+    if (!profilesRes.ok) {
+      const err = await profilesRes.text();
+      console.error("Supabase profiles error:", err);
+      return res.status(500).json({ error: "Failed to fetch profiles", detail: err });
+    }
+
+    const profiles = await profilesRes.json();
+    const nameMap = {};
+    for (const p of profiles) nameMap[p.id] = p.name;
 
     // Build ICS
     let ics = [
@@ -53,7 +74,7 @@ export default async function handler(req, res) {
     ];
 
     for (const req of requests) {
-      const name = req.profiles?.name || "Unknown";
+      const name = nameMap[req.employee_id] || "Unknown";
       const dates = (req.dates || []).sort();
       if (!dates.length) continue;
 
