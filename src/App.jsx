@@ -1,56 +1,41 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Component } from "react";
 
 // ═══════════════════════════════════════════════════════
-// CONFIGURATION — Replace with your Supabase project details
+// CONFIGURATION
 // ═══════════════════════════════════════════════════════
 const SUPABASE_URL = "https://hhobwuwautnddjzewizo.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhob2J3dXdhdXRuZGRqemV3aXpvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA5NTEyMjIsImV4cCI6MjA4NjUyNzIyMn0.xCTHExXgBiEFMzzr1T-APrejG2vHJ3CNIMVUy1pqp4A";
 
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 const DAYS_SHORT = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-
-const EMP_COLORS = [
-  "#E07A5F","#3D405B","#81B29A","#F2CC8F","#6A4C93",
-  "#1982C4","#FF595E","#8AC926","#CA6702","#9B5DE5"
-];
+const EMP_COLORS = ["#E07A5F","#3D405B","#81B29A","#F2CC8F","#6A4C93","#1982C4","#FF595E","#8AC926","#CA6702","#9B5DE5"];
 
 // ─── Utilities ───
 function getDaysInMonth(y, m) { return new Date(y, m + 1, 0).getDate(); }
 function getFirstDayOfMonth(y, m) { return new Date(y, m, 1).getDay(); }
 function dateKey(y, m, d) { return `${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`; }
 function isWeekend(y, m, d) { const day = new Date(y, m, d).getDay(); return day === 0 || day === 6; }
-
 function businessDays(dates) {
-  return dates.filter(dk => {
-    const [y,m,d] = dk.split("-").map(Number);
-    return !isWeekend(y, m-1, d);
-  }).length;
+  if (!Array.isArray(dates)) return 0;
+  return dates.filter(dk => { const [y,m,d] = dk.split("-").map(Number); return !isWeekend(y, m-1, d); }).length;
 }
-
-function formatDate(dk) {
-  const [y,m,d] = dk.split("-").map(Number);
-  return `${MONTHS[m-1]} ${d}, ${y}`;
-}
-
+function formatDate(dk) { const [y,m,d] = dk.split("-").map(Number); return `${MONTHS[m-1]} ${d}, ${y}`; }
 function toICSDate(dk) { return dk.replace(/-/g, ""); }
 
 function generateICS(employees, requests) {
   let ics = `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//VacationTracker//EN\r\nCALSCALE:GREGORIAN\r\nMETHOD:PUBLISH\r\nX-WR-CALNAME:Team Time Off\r\n`;
-  const approved = requests.filter(r => r.status === "approved");
-
-  approved.forEach((req, i) => {
-    const emp = employees.find(e => e.id === req.employee_id);
+  const approved = (requests || []).filter(r => r.status === "approved");
+  approved.forEach((req) => {
+    const emp = (employees || []).find(e => e.id === req.employee_id);
     if (!emp) return;
     const dates = (req.dates || []).sort();
     if (!dates.length) return;
-
     let ranges = [], start = dates[0], prev = dates[0];
     for (let j = 1; j < dates.length; j++) {
       if ((new Date(dates[j]) - new Date(prev)) / 86400000 <= 3) { prev = dates[j]; }
       else { ranges.push([start, prev]); start = dates[j]; prev = dates[j]; }
     }
     ranges.push([start, prev]);
-
     ranges.forEach((r, k) => {
       const end = new Date(r[1]); end.setDate(end.getDate() + 1);
       const endStr = `${end.getFullYear()}${String(end.getMonth()+1).padStart(2,"0")}${String(end.getDate()).padStart(2,"0")}`;
@@ -61,22 +46,35 @@ function generateICS(employees, requests) {
   return ics;
 }
 
-// ─── Supabase API Helpers ───
+// ─── Session Persistence ───
+function saveSession(s) { try { localStorage.setItem("vt_session", JSON.stringify(s)); } catch(e) { console.warn("saveSession failed:", e); } }
+function loadSession() { try { const s = localStorage.getItem("vt_session"); return s ? JSON.parse(s) : null; } catch(e) { console.warn("loadSession failed:", e); return null; } }
+function clearSession() { try { localStorage.removeItem("vt_session"); } catch(e) { console.warn("clearSession failed:", e); } }
+
+// ─── Supabase API ───
 async function sbFetch(path, { method = "GET", body, token, headers: extra = {} } = {}) {
   const url = `${SUPABASE_URL}${path}`;
-  const headers = {
-    "apikey": SUPABASE_ANON_KEY,
-    "Content-Type": "application/json",
-    ...extra,
-  };
+  console.log(`[sbFetch] ${method} ${path}`);
+  const headers = { "apikey": SUPABASE_ANON_KEY, "Content-Type": "application/json", ...extra };
   if (token) headers["Authorization"] = `Bearer ${token}`;
   else headers["Authorization"] = `Bearer ${SUPABASE_ANON_KEY}`;
 
-  const res = await fetch(url, { method, headers, body: body ? JSON.stringify(body) : undefined });
+  let res;
+  try {
+    res = await fetch(url, { method, headers, body: body ? JSON.stringify(body) : undefined });
+  } catch (networkErr) {
+    console.error("[sbFetch] Network error:", networkErr);
+    throw new Error(`Network error: ${networkErr.message}`);
+  }
+
   const text = await res.text();
+  console.log(`[sbFetch] ${res.status} response:`, text.slice(0, 200));
   let data;
   try { data = JSON.parse(text); } catch { data = text; }
-  if (!res.ok) throw new Error(typeof data === "object" ? (data.error_description || data.msg || data.message || JSON.stringify(data)) : data);
+  if (!res.ok) {
+    const msg = typeof data === "object" ? (data.error_description || data.msg || data.message || JSON.stringify(data)) : data;
+    throw new Error(`API ${res.status}: ${msg}`);
+  }
   return data;
 }
 
@@ -87,9 +85,8 @@ async function authSignIn(email, password) {
   return sbFetch("/auth/v1/token?grant_type=password", { method: "POST", body: { email, password } });
 }
 async function authSignOut(token) {
-  try { await sbFetch("/auth/v1/logout", { method: "POST", token }); } catch {}
+  try { await sbFetch("/auth/v1/logout", { method: "POST", token }); } catch(e) { console.warn("signout error:", e); }
 }
-
 async function fetchProfiles(token) {
   return sbFetch("/rest/v1/profiles?select=*&order=name", { token });
 }
@@ -113,8 +110,32 @@ async function removeRequest(id, token) {
   return sbFetch(`/rest/v1/time_off_requests?id=eq.${id}`, { method: "DELETE", token });
 }
 
+// ─── Error Boundary ───
+class ErrorBoundary extends Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(error) { return { error }; }
+  componentDidCatch(error, info) { console.error("React Error Boundary:", error, info); }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ padding: 40, maxWidth: 500, margin: "0 auto", fontFamily: "monospace" }}>
+          <h2 style={{ color: "#C00" }}>Something crashed</h2>
+          <pre style={{ background: "#f4f4f4", padding: 16, borderRadius: 8, overflow: "auto", fontSize: 12 }}>
+            {this.state.error.toString()}
+          </pre>
+          <button onClick={() => { clearSession(); window.location.reload(); }}
+            style={{ marginTop: 16, padding: "8px 16px", background: "#333", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer" }}>
+            Clear session & reload
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 // ─── Calendar ───
-function MiniCalendar({ year, month, selectedDates, approvedDates, pendingDates, onToggleDate, allEmpTimeOff, isAdmin, employees }) {
+function MiniCalendar({ year, month, selectedDates = [], approvedDates = [], pendingDates = [], onToggleDate, allEmpTimeOff = {}, isAdmin, employees = [] }) {
   const daysInMonth = getDaysInMonth(year, month);
   const firstDay = getFirstDayOfMonth(year, month);
   const today = new Date();
@@ -138,9 +159,9 @@ function MiniCalendar({ year, month, selectedDates, approvedDates, pendingDates,
           const weekend = isWeekend(year, month, d);
           const isToday = dk === todayKey;
           const isPast = new Date(year, month, d) < new Date(today.getFullYear(), today.getMonth(), today.getDate());
-          const isSel = selectedDates?.includes(dk);
-          const isApp = approvedDates?.includes(dk);
-          const isPend = pendingDates?.includes(dk);
+          const isSel = selectedDates.includes(dk);
+          const isApp = approvedDates.includes(dk);
+          const isPend = pendingDates.includes(dk);
 
           let bg = "transparent", clr = weekend ? "#ccc" : isPast ? "#bbb" : "#2d2d2d", bdr = "1.5px solid transparent";
           if (isSel) { bg = "#2d6a4f"; clr = "#fff"; }
@@ -149,15 +170,15 @@ function MiniCalendar({ year, month, selectedDates, approvedDates, pendingDates,
           if (isToday && !isSel && !isApp) bdr = "1.5px solid #2d6a4f";
 
           let dots = [];
-          if (isAdmin && employees) {
+          if (isAdmin && employees.length) {
             employees.forEach((emp, idx) => {
-              if ((allEmpTimeOff?.[emp.id] || []).includes(dk)) dots.push(EMP_COLORS[idx % EMP_COLORS.length]);
+              const empDates = allEmpTimeOff[emp.id];
+              if (Array.isArray(empDates) && empDates.includes(dk)) dots.push(EMP_COLORS[idx % EMP_COLORS.length]);
             });
           }
 
           return (
             <div key={dk} onClick={() => !weekend && !isPast && onToggleDate?.(dk)}
-              title={dots.length ? employees.filter((e,idx) => (allEmpTimeOff?.[e.id]||[]).includes(dk)).map(e=>e.name).join(", ") : undefined}
               style={{ position: "relative", textAlign: "center", padding: "6px 2px", fontSize: 13, fontFamily: "var(--mono)", borderRadius: 6, border: bdr, cursor: weekend || isPast || !onToggleDate ? "default" : "pointer", background: bg, color: clr, fontWeight: isToday ? 700 : 400, opacity: isPast && !isApp && !isPend ? 0.5 : 1, transition: "all 0.15s" }}>
               {d}
               {dots.length > 0 && (
@@ -212,26 +233,6 @@ function EditForm({ emp, onSave, onCancel }) {
   );
 }
 
-// ─── Config Screen ───
-function ConfigScreen() {
-  return (
-    <div style={{ ...sCont, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ maxWidth: 460, padding: 32, textAlign: "center" }}>
-        <div style={{ fontSize: 40, marginBottom: 12 }}>⚙️</div>
-        <h2 style={{ fontFamily: "var(--serif)", fontSize: 24, marginBottom: 8 }}>Setup Required</h2>
-        <p style={{ color: "#666", lineHeight: 1.6, marginBottom: 20, fontSize: 14 }}>
-          Add your Supabase project URL and anon key at the top of the file. Find them in <strong>Settings → API</strong>.
-        </p>
-        <div style={{ background: "#f4f4f4", borderRadius: 8, padding: 16, fontFamily: "var(--mono)", fontSize: 12, textAlign: "left", lineHeight: 1.8 }}>
-          <div style={{ color: "#888" }}>// Top of file</div>
-          <div><span style={{ color: "#2d6a4f" }}>const</span> SUPABASE_URL = <span style={{ color: "#E07A5F" }}>"https://xyz.supabase.co"</span>;</div>
-          <div><span style={{ color: "#2d6a4f" }}>const</span> SUPABASE_ANON_KEY = <span style={{ color: "#E07A5F" }}>"eyJ..."</span>;</div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ─── Auth Screen ───
 function AuthScreen({ onAuth }) {
   const [mode, setMode] = useState("login");
@@ -248,12 +249,15 @@ function AuthScreen({ onAuth }) {
       if (mode === "signup") {
         if (!name.trim()) { setError("Name required"); setLoading(false); return; }
         const data = await authSignUp(email, password, name.trim());
+        console.log("[Auth] signup response:", data);
         if (data.access_token) onAuth(data);
         else setDone(true);
       } else {
-        onAuth(await authSignIn(email, password));
+        const data = await authSignIn(email, password);
+        console.log("[Auth] login response:", JSON.stringify(data).slice(0, 200));
+        onAuth(data);
       }
-    } catch (e) { setError(e.message); }
+    } catch (e) { console.error("[Auth] error:", e); setError(e.message); }
     setLoading(false);
   };
 
@@ -302,83 +306,130 @@ function AuthScreen({ onAuth }) {
 // ═══════════════════════════════════════════════════════
 // MAIN APP
 // ═══════════════════════════════════════════════════════
-export default function VacationTracker() {
+function App() {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
   const [profiles, setProfiles] = useState([]);
   const [requests, setRequests] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [appState, setAppState] = useState("init"); // init | loading | ready | error
   const [error, setError] = useState("");
+  const [debugLog, setDebugLog] = useState([]);
+  const [showDebug, setShowDebug] = useState(false);
 
   const [calYear, setCalYear] = useState(new Date().getFullYear());
   const [calMonth, setCalMonth] = useState(new Date().getMonth());
   const [selectedDates, setSelectedDates] = useState([]);
   const [requestNote, setRequestNote] = useState("");
-
   const [adminTab, setAdminTab] = useState("employees");
   const [editingEmp, setEditingEmp] = useState(null);
 
+  const log = useCallback((msg) => {
+    console.log(`[VT] ${msg}`);
+    setDebugLog(prev => [...prev.slice(-20), `${new Date().toLocaleTimeString()} ${msg}`]);
+  }, []);
+
+  // Load session from storage on mount
+  useEffect(() => {
+    const saved = loadSession();
+    log(`Init: saved session = ${saved ? "yes" : "no"}`);
+    if (saved) setSession(saved);
+    setAppState("ready");
+  }, [log]);
+
   const token = session?.access_token;
+  const userId = session?.user?.id;
   const isAdmin = profile?.role === "admin";
 
-  const fonts = (
-    <>
-      <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-      <style>{`:root { --serif: 'Fraunces', serif; --mono: 'JetBrains Mono', monospace; }`}</style>
-    </>
-  );
+  const handleAuth = useCallback((data) => {
+    log(`Auth success: user=${data?.user?.email}`);
+    setSession(data);
+    saveSession(data);
+  }, [log]);
 
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return <>{fonts}<ConfigScreen /></>;
-  if (!session) return <>{fonts}<AuthScreen onAuth={setSession} /></>;
+  const doSignOut = useCallback(async () => {
+    log("Signing out");
+    if (token) await authSignOut(token);
+    clearSession();
+    setSession(null); setProfile(null); setProfiles([]); setRequests([]);
+  }, [token, log]);
 
+  // Main data loader
   const loadData = useCallback(async () => {
-    if (!token) return;
-    setLoading(true);
+    if (!token || !userId) {
+      log(`loadData skipped: token=${!!token}, userId=${userId}`);
+      return;
+    }
+    log("loadData: starting...");
+    setError("");
     try {
+      log("loadData: fetching profiles...");
       const profs = await fetchProfiles(token);
+      log(`loadData: got ${Array.isArray(profs) ? profs.length : "non-array"} profiles`);
+
+      if (!Array.isArray(profs)) {
+        throw new Error(`Expected array of profiles, got: ${JSON.stringify(profs).slice(0, 100)}`);
+      }
+
       setProfiles(profs);
-      const me = profs.find(p => p.id === session.user.id);
-      setProfile(me);
-      // Admins get all requests, employees get their own
+      const me = profs.find(p => p.id === userId);
+      log(`loadData: my profile = ${me ? me.name + " (" + me.role + ")" : "NOT FOUND"}`);
+      setProfile(me || null);
+
+      log("loadData: fetching requests...");
       const reqs = me?.role === "admin"
         ? await fetchRequests(token)
-        : await fetchRequests(token, session.user.id);
+        : await fetchRequests(token, userId);
+      log(`loadData: got ${Array.isArray(reqs) ? reqs.length : "non-array"} requests`);
+
+      if (!Array.isArray(reqs)) {
+        throw new Error(`Expected array of requests, got: ${JSON.stringify(reqs).slice(0, 100)}`);
+      }
+
       setRequests(reqs);
-    } catch (e) { setError(e.message); }
-    setLoading(false);
-  }, [token, session?.user?.id]);
+      log("loadData: done!");
+    } catch (e) {
+      log(`loadData ERROR: ${e.message}`);
+      setError(e.message);
+      if (e.message?.includes("JWT") || e.message?.includes("expired") || e.message?.includes("401")) {
+        log("Token expired, clearing session");
+        clearSession();
+        setSession(null);
+      }
+    }
+  }, [token, userId, log]);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  // Fetch data when session changes
+  useEffect(() => {
+    if (session && token) {
+      log("Session detected, loading data...");
+      loadData();
+    }
+  }, [session, token, loadData, log]);
 
-  const doSignOut = async () => {
-    await authSignOut(token);
-    setSession(null); setProfile(null); setProfiles([]); setRequests([]);
-  };
-
+  // Calendar nav
   const prevMonth = () => { if (calMonth === 0) { setCalMonth(11); setCalYear(y => y-1); } else setCalMonth(m => m-1); };
   const nextMonth = () => { if (calMonth === 11) { setCalMonth(0); setCalYear(y => y+1); } else setCalMonth(m => m+1); };
   const toggleDate = (dk) => setSelectedDates(p => p.includes(dk) ? p.filter(d => d !== dk) : [...p, dk].sort());
 
-  // Employee computed
-  const myApproved = requests.filter(r => r.employee_id === session?.user?.id && r.status === "approved").flatMap(r => r.dates);
-  const myPendingReqs = requests.filter(r => r.employee_id === session?.user?.id && r.status === "pending");
-  const myPendingDates = myPendingReqs.flatMap(r => r.dates);
+  // Computed (safe)
+  const myApproved = (requests || []).filter(r => r.employee_id === userId && r.status === "approved").flatMap(r => r.dates || []);
+  const myPendingReqs = (requests || []).filter(r => r.employee_id === userId && r.status === "pending");
+  const myPendingDates = myPendingReqs.flatMap(r => r.dates || []);
   const usedDays = businessDays(myApproved);
   const pendDays = businessDays(myPendingDates);
   const remaining = profile ? profile.allowance_days - usedDays - pendDays : 0;
 
-  // Admin computed
   const allEmpTimeOff = {};
-  requests.filter(r => r.status === "approved").forEach(r => {
+  (requests || []).filter(r => r.status === "approved").forEach(r => {
     if (!allEmpTimeOff[r.employee_id]) allEmpTimeOff[r.employee_id] = [];
-    allEmpTimeOff[r.employee_id].push(...r.dates);
+    allEmpTimeOff[r.employee_id].push(...(r.dates || []));
   });
-  const allPending = requests.filter(r => r.status === "pending");
+  const allPending = (requests || []).filter(r => r.status === "pending");
 
   const submitReq = async () => {
     if (!selectedDates.length) return;
     try {
-      await postRequest(session.user.id, selectedDates, requestNote, token);
+      await postRequest(userId, selectedDates, requestNote, token);
       setSelectedDates([]); setRequestNote("");
       await loadData();
     } catch (e) { setError(e.message); }
@@ -386,7 +437,7 @@ export default function VacationTracker() {
 
   const handleReq = async (id, action) => {
     try {
-      if (action === "approve") await patchRequest(id, { status: "approved", reviewed_by: session.user.id }, token);
+      if (action === "approve") await patchRequest(id, { status: "approved", reviewed_by: userId }, token);
       else await removeRequest(id, token);
       await loadData();
     } catch (e) { setError(e.message); }
@@ -400,9 +451,41 @@ export default function VacationTracker() {
     URL.revokeObjectURL(url);
   };
 
+  // Debug panel
+  const debugPanel = (
+    <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 9999 }}>
+      <button onClick={() => setShowDebug(d => !d)}
+        style={{ position: "absolute", bottom: showDebug ? "auto" : 8, top: showDebug ? 8 : "auto", right: 8, background: "#333", color: "#fff", border: "none", borderRadius: 4, padding: "4px 8px", fontSize: 11, cursor: "pointer", fontFamily: "monospace", zIndex: 10000 }}>
+        {showDebug ? "✕ close" : "🐛 debug"}
+      </button>
+      {showDebug && (
+        <div style={{ background: "#1a1a1a", color: "#0f0", padding: "12px 12px 40px", fontSize: 11, fontFamily: "monospace", maxHeight: 300, overflow: "auto", lineHeight: 1.6 }}>
+          <div style={{ color: "#888", marginBottom: 4 }}>
+            session: {session ? "yes" : "no"} | token: {token ? token.slice(0,20)+"..." : "none"} | userId: {userId || "none"} | profile: {profile?.name || "null"} | role: {profile?.role || "none"} | profiles#: {profiles.length} | requests#: {requests.length} | error: {error || "none"}
+          </div>
+          {debugLog.map((l, i) => <div key={i}>{l}</div>)}
+          <button onClick={() => { clearSession(); window.location.reload(); }}
+            style={{ marginTop: 8, padding: "4px 8px", background: "#c00", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer", fontSize: 10 }}>
+            Reset & reload
+          </button>
+        </div>
+      )}
+    </div>
+  );
+
+  // ─── RENDER ───
+  if (appState === "init") {
+    return <div style={{ ...sCont, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ fontFamily: "var(--serif)", fontSize: 20 }}>Initializing...</div>
+    </div>;
+  }
+
+  if (!session) {
+    return <><AuthScreen onAuth={handleAuth} />{debugPanel}</>;
+  }
+
   return (
     <>
-      {fonts}
       <div style={sCont}>
         <div style={{ maxWidth: 560, margin: "0 auto", padding: "24px 16px" }}>
 
@@ -410,9 +493,11 @@ export default function VacationTracker() {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
             <div>
               <h1 style={{ fontFamily: "var(--serif)", fontSize: 20, fontWeight: 800, margin: 0 }}>{profile?.name || "Loading..."}</h1>
-              <span style={{ fontSize: 11, fontFamily: "var(--mono)", color: isAdmin ? "#2d6a4f" : "#888", background: isAdmin ? "#E8F5E9" : "#f0f0f0", padding: "2px 8px", borderRadius: 10 }}>
-                {isAdmin ? "admin" : "employee"}
-              </span>
+              {profile && (
+                <span style={{ fontSize: 11, fontFamily: "var(--mono)", color: isAdmin ? "#2d6a4f" : "#888", background: isAdmin ? "#E8F5E9" : "#f0f0f0", padding: "2px 8px", borderRadius: 10 }}>
+                  {profile.role}
+                </span>
+              )}
             </div>
             <div style={{ display: "flex", gap: 8 }}>
               <button onClick={loadData} style={{ ...sNavBtn, fontSize: 13, padding: "5px 10px" }} title="Refresh">↻</button>
@@ -420,41 +505,44 @@ export default function VacationTracker() {
             </div>
           </div>
 
+          {/* ERROR BANNER */}
           {error && (
-            <div style={{ background: "#FEE", border: "1px solid #FCC", borderRadius: 8, padding: "8px 12px", marginBottom: 16, fontSize: 12, color: "#C00" }}>
-              {error} <button onClick={() => setError("")} style={{ float: "right", background: "none", border: "none", cursor: "pointer" }}>✕</button>
+            <div style={{ background: "#FEE", border: "1px solid #FCC", borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 13, color: "#C00", lineHeight: 1.5 }}>
+              <strong>Error:</strong> {error}
+              <button onClick={() => setError("")} style={{ float: "right", background: "none", border: "none", cursor: "pointer", fontSize: 16 }}>✕</button>
             </div>
           )}
 
-          {loading && !profile && <div style={{ textAlign: "center", padding: 60, color: "#aaa", fontFamily: "var(--serif)", fontSize: 18 }}>Loading...</div>}
+          {/* LOADING STATE */}
+          {!profile && !error && (
+            <div style={{ textAlign: "center", padding: 60, color: "#aaa" }}>
+              <div style={{ fontFamily: "var(--serif)", fontSize: 18, marginBottom: 8 }}>Loading your profile...</div>
+              <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "#ccc" }}>If this persists, tap the 🐛 debug button below</div>
+            </div>
+          )}
 
-          {/* No profile found */}
-          {!loading && !profile && session && (
+          {/* PROFILE NOT FOUND */}
+          {!profile && error && session && (
             <div style={{ ...sCard, textAlign: "center", padding: 32 }}>
               <div style={{ fontSize: 32, marginBottom: 12 }}>⚠️</div>
               <div style={{ fontFamily: "var(--serif)", fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Profile not found</div>
               <p style={{ color: "#666", fontSize: 13, lineHeight: 1.6, marginBottom: 16 }}>
-                Your login worked but no matching profile was found in the database. This usually means the auto-create trigger didn't fire.
+                Login succeeded but no profile was loaded. Check the debug panel for details.
               </p>
               <p style={{ color: "#888", fontSize: 12, fontFamily: "var(--mono)", marginBottom: 16 }}>
-                User ID: {session.user.id}<br />
-                Email: {session.user.email}
+                User ID: {userId || "?"}<br />
+                Email: {session?.user?.email || "?"}
               </p>
-              <div style={{ background: "#f4f4f4", borderRadius: 8, padding: 14, fontSize: 12, fontFamily: "var(--mono)", textAlign: "left", lineHeight: 1.8, marginBottom: 16 }}>
-                <div style={{ color: "#888" }}>-- Run this in Supabase SQL Editor:</div>
-                <div>INSERT INTO public.profiles (id, name, email, role)</div>
-                <div>VALUES ('{session.user.id}',</div>
-                <div>  '{session.user.email?.split('@')[0]}',</div>
-                <div>  '{session.user.email}', 'admin');</div>
+              <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
+                <button onClick={loadData} style={sPrimBtn}>Retry</button>
+                <button onClick={doSignOut} style={sNavBtn}>Sign Out</button>
               </div>
-              <button onClick={loadData} style={sPrimBtn}>Retry</button>
             </div>
           )}
 
           {/* ═══ EMPLOYEE VIEW ═══ */}
           {profile && !isAdmin && (
             <>
-              {/* Balance cards */}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 24 }}>
                 {[
                   { val: remaining, label: "Available", color: "#2d6a4f" },
@@ -468,7 +556,6 @@ export default function VacationTracker() {
                 ))}
               </div>
 
-              {/* Calendar */}
               <div style={sCard}>
                 <CalNav year={calYear} month={calMonth} onPrev={prevMonth} onNext={nextMonth} />
                 <MiniCalendar year={calYear} month={calMonth}
@@ -482,7 +569,6 @@ export default function VacationTracker() {
                 </div>
               </div>
 
-              {/* Request form */}
               {selectedDates.length > 0 && (
                 <div style={{ ...sCard, marginTop: 16, background: "#f0f7f2" }}>
                   <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8, fontFamily: "var(--serif)" }}>
@@ -499,7 +585,6 @@ export default function VacationTracker() {
                 </div>
               )}
 
-              {/* Pending requests */}
               {myPendingReqs.length > 0 && (
                 <div style={{ ...sCard, marginTop: 16 }}>
                   <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12, fontFamily: "var(--serif)" }}>Pending Requests</div>
@@ -507,7 +592,7 @@ export default function VacationTracker() {
                     <div key={req.id} style={{ padding: "10px 0", borderBottom: "1px solid #eee" }}>
                       <div style={{ fontSize: 13, fontWeight: 600 }}>{businessDays(req.dates)} day{businessDays(req.dates)!==1?"s":""}</div>
                       <div style={{ fontSize: 11, color: "#888", fontFamily: "var(--mono)", marginTop: 2 }}>
-                        {req.dates.slice(0,3).map(formatDate).join(", ")}{req.dates.length > 3 ? ` +${req.dates.length-3} more` : ""}
+                        {(req.dates||[]).slice(0,3).map(formatDate).join(", ")}{(req.dates||[]).length > 3 ? ` +${req.dates.length-3} more` : ""}
                       </div>
                       {req.note && <div style={{ fontSize: 12, color: "#666", marginTop: 4, fontStyle: "italic" }}>"{req.note}"</div>}
                       <span style={{ display: "inline-block", padding: "3px 10px", borderRadius: 20, fontSize: 11, fontWeight: 600, fontFamily: "var(--mono)", background: "#FFF3CD", color: "#856404", marginTop: 6 }}>⏳ Awaiting approval</span>
@@ -516,7 +601,6 @@ export default function VacationTracker() {
                 </div>
               )}
 
-              {/* Approved history */}
               {myApproved.length > 0 && (
                 <div style={{ ...sCard, marginTop: 16 }}>
                   <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8, fontFamily: "var(--serif)" }}>Approved Time Off</div>
@@ -531,7 +615,6 @@ export default function VacationTracker() {
           {/* ═══ ADMIN VIEW ═══ */}
           {profile && isAdmin && (
             <>
-              {/* Tabs */}
               <div style={{ display: "flex", gap: 0, marginBottom: 20, borderBottom: "2px solid #eee" }}>
                 {[
                   { key: "employees", label: "Team" },
@@ -547,19 +630,17 @@ export default function VacationTracker() {
                 <button onClick={exportICS} style={{ ...sNavBtn, fontSize: 11, padding: "4px 10px", color: "#2d6a4f", borderColor: "#2d6a4f", alignSelf: "center" }}>📅 .ics</button>
               </div>
 
-              {/* TEAM TAB */}
-              {adminTab === "employees" && profiles.map((emp, idx) => {
-                const empApp = requests.filter(r => r.employee_id === emp.id && r.status === "approved").flatMap(r => r.dates);
-                const empPend = requests.filter(r => r.employee_id === emp.id && r.status === "pending").flatMap(r => r.dates);
+              {adminTab === "employees" && (profiles || []).map((emp, idx) => {
+                const empApp = (requests || []).filter(r => r.employee_id === emp.id && r.status === "approved").flatMap(r => r.dates || []);
+                const empPend = (requests || []).filter(r => r.employee_id === emp.id && r.status === "pending").flatMap(r => r.dates || []);
                 const used = businessDays(empApp);
                 const pend = businessDays(empPend);
                 const pct = emp.allowance_days > 0 ? (used / emp.allowance_days) * 100 : 0;
-
                 return (
                   <div key={emp.id} style={{ ...sCard, marginBottom: 10 }}>
                     {editingEmp === emp.id ? (
                       <EditForm emp={emp}
-                        onSave={async (u) => { await patchProfile(emp.id, u, token); setEditingEmp(null); await loadData(); }}
+                        onSave={async (u) => { try { await patchProfile(emp.id, u, token); setEditingEmp(null); await loadData(); } catch(e) { setError(e.message); } }}
                         onCancel={() => setEditingEmp(null)} />
                     ) : (
                       <div>
@@ -571,7 +652,7 @@ export default function VacationTracker() {
                           </div>
                           <div style={{ display: "flex", gap: 6 }}>
                             <button onClick={() => setEditingEmp(emp.id)} style={sIconBtn}>✏️</button>
-                            {emp.id !== session.user.id && <button onClick={() => { if (confirm(`Remove ${emp.name}?`)) { removeProfile(emp.id, token).then(loadData); }}} style={sIconBtn}>🗑</button>}
+                            {emp.id !== userId && <button onClick={() => { if (confirm(`Remove ${emp.name}?`)) removeProfile(emp.id, token).then(loadData).catch(e => setError(e.message)); }} style={sIconBtn}>🗑</button>}
                           </div>
                         </div>
                         <div style={{ background: "#f0f0f0", borderRadius: 4, height: 6, marginBottom: 6, overflow: "hidden" }}>
@@ -587,7 +668,6 @@ export default function VacationTracker() {
                 );
               })}
 
-              {/* REQUESTS TAB */}
               {adminTab === "requests" && (
                 allPending.length === 0 ? (
                   <div style={{ textAlign: "center", padding: 40, color: "#aaa" }}>
@@ -595,7 +675,7 @@ export default function VacationTracker() {
                     <div style={{ fontFamily: "var(--mono)", fontSize: 13 }}>No pending requests</div>
                   </div>
                 ) : allPending.map(req => {
-                  const emp = profiles.find(p => p.id === req.employee_id);
+                  const emp = (profiles || []).find(p => p.id === req.employee_id);
                   return (
                     <div key={req.id} style={{ ...sCard, marginBottom: 10 }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
@@ -603,7 +683,7 @@ export default function VacationTracker() {
                           <div style={{ fontSize: 15, fontWeight: 700 }}>{emp?.name || "Unknown"}</div>
                           <div style={{ fontSize: 13, fontWeight: 600, color: "#2d6a4f", marginTop: 2 }}>{businessDays(req.dates)} day{businessDays(req.dates)!==1?"s":""}</div>
                           <div style={{ fontSize: 11, color: "#888", fontFamily: "var(--mono)", marginTop: 4 }}>
-                            {req.dates.slice(0,4).map(formatDate).join(", ")}{req.dates.length > 4 ? ` +${req.dates.length-4} more` : ""}
+                            {(req.dates||[]).slice(0,4).map(formatDate).join(", ")}{(req.dates||[]).length > 4 ? ` +${req.dates.length-4} more` : ""}
                           </div>
                           {req.note && <div style={{ fontSize: 12, color: "#666", marginTop: 6, fontStyle: "italic" }}>"{req.note}"</div>}
                         </div>
@@ -617,7 +697,6 @@ export default function VacationTracker() {
                 })
               )}
 
-              {/* CALENDAR TAB */}
               {adminTab === "calendar" && (
                 <div style={sCard}>
                   <CalNav year={calYear} month={calMonth} onPrev={prevMonth} onNext={nextMonth} />
@@ -625,7 +704,7 @@ export default function VacationTracker() {
                     selectedDates={[]} approvedDates={[]} pendingDates={[]}
                     allEmpTimeOff={allEmpTimeOff} isAdmin={true} employees={profiles} />
                   <div style={{ marginTop: 16, display: "flex", gap: 12, flexWrap: "wrap" }}>
-                    {profiles.map((emp, idx) => (
+                    {(profiles || []).map((emp, idx) => (
                       <div key={emp.id} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: "#666" }}>
                         <div style={{ width: 8, height: 8, borderRadius: "50%", background: EMP_COLORS[idx % EMP_COLORS.length] }} /> {emp.name}
                       </div>
@@ -637,6 +716,20 @@ export default function VacationTracker() {
           )}
         </div>
       </div>
+      {debugPanel}
+    </>
+  );
+}
+
+// Wrap in error boundary
+export default function VacationTracker() {
+  return (
+    <>
+      <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+      <style>{`:root { --serif: 'Fraunces', serif; --mono: 'JetBrains Mono', monospace; }`}</style>
+      <ErrorBoundary>
+        <App />
+      </ErrorBoundary>
     </>
   );
 }
