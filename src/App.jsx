@@ -495,7 +495,7 @@ function AuthScreen({ onAuth }) {
       <div style={{ maxWidth: 400, width: "100%", padding: "40px 24px" }}>
         <div style={{ textAlign: "center", marginBottom: 36 }}>
           <img src="/logo.svg" alt="Mess" style={{ height: 32, marginBottom: 16 }} />
-          <h1 style={{ fontFamily: "var(--serif)", fontSize: 28, fontWeight: 800, margin: 0 }}>Time Off Tracker</h1>
+          <h1 style={{ fontFamily: "var(--serif)", fontSize: 28, fontWeight: 800, margin: 0 }}>HR Hub</h1>
           <p style={{ color: "#888", fontSize: 13, marginTop: 6, fontFamily: "var(--mono)" }}>{mode === "login" ? "Sign in to continue" : "Create your account"}</p>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 16 }}>
@@ -637,29 +637,39 @@ function App() {
   if (appState === "init") return <div style={{ ...sCont, display: "flex", alignItems: "center", justifyContent: "center" }}><div style={{ fontFamily: "var(--serif)", fontSize: 20 }}>Loading...</div></div>;
   if (!session) return <AuthScreen onAuth={handleAuth} />;
 
+  const initials = (profile?.name || "?").split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2);
+
   const sidebar = (
-    <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #eee", padding: 16 }}>
-      <div style={{ fontSize: 13, fontWeight: 700, fontFamily: "var(--serif)", marginBottom: 8 }}>Upcoming</div>
-      <UpcomingSidebar profiles={profiles} requests={requests} holidays={holidays} assets={assets} isAdmin={isAdmin} />
+    <div>
+      {/* User card */}
+      <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #eee", padding: 16, marginBottom: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+          <div style={{ width: 40, height: 40, borderRadius: 10, background: "#2d6a4f", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 15, fontWeight: 800, fontFamily: "var(--serif)", flexShrink: 0 }}>{initials}</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{profile?.name || "Loading..."}</div>
+            {profile && <span style={{ fontSize: 10, fontFamily: "var(--mono)", color: isAdmin ? "#2d6a4f" : "#888", background: isAdmin ? "#E8F5E9" : "#f0f0f0", padding: "2px 8px", borderRadius: 10 }}>{profile.role}</span>}
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 6 }}>
+          <button onClick={loadData} style={{ ...sNavBtn, fontSize: 12, padding: "4px 10px", flex: 1 }}>↻ Refresh</button>
+          <button onClick={doSignOut} style={{ ...sNavBtn, fontSize: 12, padding: "4px 10px", color: "#999", flex: 1 }}>Sign Out</button>
+        </div>
+      </div>
+      {/* Upcoming */}
+      <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #eee", padding: 16 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, fontFamily: "var(--serif)", marginBottom: 8 }}>Upcoming</div>
+        <UpcomingSidebar profiles={profiles} requests={requests} holidays={holidays} assets={assets} isAdmin={isAdmin} />
+      </div>
     </div>
   );
 
   return (
     <div style={sCont}>
       <div style={{ maxWidth: 920, margin: "0 auto", padding: "24px 16px" }}>
-        {/* HEADER */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <img src="/logo.svg" alt="Mess" style={{ height: 20 }} />
-            <div>
-              <h1 style={{ fontFamily: "var(--serif)", fontSize: 20, fontWeight: 800, margin: 0 }}>{profile?.name || "Loading..."}</h1>
-              {profile && <span style={{ fontSize: 11, fontFamily: "var(--mono)", color: isAdmin ? "#2d6a4f" : "#888", background: isAdmin ? "#E8F5E9" : "#f0f0f0", padding: "2px 8px", borderRadius: 10 }}>{profile.role}</span>}
-            </div>
-          </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={loadData} style={{ ...sNavBtn, fontSize: 13, padding: "5px 10px" }} title="Refresh">↻</button>
-            <button onClick={doSignOut} style={{ ...sNavBtn, fontSize: 12, padding: "5px 12px", color: "#999" }}>Sign Out</button>
-          </div>
+        {/* BRANDED HEADER */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 24 }}>
+          <img src="/logo.svg" alt="Mess" style={{ height: 22 }} />
+          <h1 style={{ fontFamily: "var(--serif)", fontSize: 22, fontWeight: 800, margin: 0, letterSpacing: -0.5 }}>HR Hub</h1>
         </div>
 
         {error && <div style={{ background: "#FEE", border: "1px solid #FCC", borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 13, color: "#C00" }}>{error}<button onClick={() => setError("")} style={{ float: "right", background: "none", border: "none", cursor: "pointer", fontSize: 16 }}>✕</button></div>}
@@ -667,18 +677,20 @@ function App() {
         {!profile && error && <div style={{ ...sCard, textAlign: "center", padding: 32 }}><div style={{ fontSize: 32, marginBottom: 12 }}>⚠️</div><div style={{ fontFamily: "var(--serif)", fontSize: 18, fontWeight: 700, marginBottom: 16 }}>Profile not found</div><div style={{ display: "flex", gap: 8, justifyContent: "center" }}><button onClick={loadData} style={sPrimBtn}>Retry</button><button onClick={doSignOut} style={sNavBtn}>Sign Out</button></div></div>}
 
         {profile && (
+          <>
+          {/* TABS — full width above grid */}
+          <div style={{ display: "flex", gap: 0, marginBottom: 20, borderBottom: "2px solid #eee", flexWrap: "wrap" }}>
+            {tabs.map(t => (
+              <button key={t.key} onClick={() => { setTab(t.key); setViewingProfile(null); setAssetView("list"); setEditingAsset(null); }} style={{
+                background: "none", border: "none", padding: "10px 14px", cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: "var(--mono)",
+                color: tab === t.key ? "#2d6a4f" : "#999", borderBottom: tab === t.key ? "2px solid #2d6a4f" : "2px solid transparent", marginBottom: -2,
+              }}>{t.label}</button>
+            ))}
+            {isAdmin && <><div style={{ flex: 1 }} /><button onClick={exportICS} style={{ ...sNavBtn, fontSize: 11, padding: "4px 10px", color: "#2d6a4f", borderColor: "#2d6a4f", alignSelf: "center" }}>📅 .ics</button></>}
+          </div>
+
           <div style={{ display: "grid", gridTemplateColumns: "1fr 260px", gap: 20, alignItems: "start" }}>
             <div style={{ minWidth: 0 }}>
-              {/* TABS */}
-              <div style={{ display: "flex", gap: 0, marginBottom: 20, borderBottom: "2px solid #eee", flexWrap: "wrap" }}>
-                {tabs.map(t => (
-                  <button key={t.key} onClick={() => { setTab(t.key); setViewingProfile(null); setAssetView("list"); setEditingAsset(null); }} style={{
-                    background: "none", border: "none", padding: "10px 12px", cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: "var(--mono)",
-                    color: tab === t.key ? "#2d6a4f" : "#999", borderBottom: tab === t.key ? "2px solid #2d6a4f" : "2px solid transparent", marginBottom: -2,
-                  }}>{t.label}</button>
-                ))}
-                {isAdmin && <><div style={{ flex: 1 }} /><button onClick={exportICS} style={{ ...sNavBtn, fontSize: 11, padding: "4px 10px", color: "#2d6a4f", borderColor: "#2d6a4f", alignSelf: "center" }}>📅 .ics</button></>}
-              </div>
 
               {/* TIME OFF */}
               {tab === "timeoff" && <TimeOffPanel calYear={calYear} calMonth={calMonth} prevMonth={prevMonth} nextMonth={nextMonth} selectedDates={selectedDates} toggleDate={toggleDate} myApproved={myApproved} myPendingDates={myPendingDates} myPendingReqs={myPendingReqs} holidayDates={holidayDates} holidayNames={holidayNames} remaining={remaining} usedDays={usedDays} pendDays={pendDays} requestNote={requestNote} setRequestNote={setRequestNote} submitReq={submitReq} clearSelection={() => setSelectedDates([])} />}
@@ -841,6 +853,7 @@ function App() {
             </div>
             <div style={{ position: "sticky", top: 24 }}>{sidebar}</div>
           </div>
+          </>
         )}
       </div>
     </div>
